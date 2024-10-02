@@ -1,0 +1,30 @@
+services:
+  medusa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: samplestore
+    ports:
+      - "9000:9000"
+    depends_on:
+      - postgres
+
+    environment:
+      DATABASE_URL: postgres://postgres:123@postgres:5432/medusa_store_db
+
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: medusa_store_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+
+
+volumes:
+  pg_data:
+    driver: local
+
