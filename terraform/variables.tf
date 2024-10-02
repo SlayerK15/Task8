@@ -20,3 +20,8 @@ variable "image_uri" {
   description = "The URI of the Docker image to deploy"
   type        = string
 }
+
+variable "subnets" {
+  description = "List of subnets"
+  type        = list(string)
+}
