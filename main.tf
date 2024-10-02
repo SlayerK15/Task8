@@ -1,15 +1,44 @@
+# Provider Configuration
 provider "aws" {
   region = var.aws_region
 }
 
-# VPC
+variable "aws_region" {
+  description = "AWS Region"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "ecs_cluster_name" {
+  description = "ECS Cluster Name"
+  type        = string
+  default     = "medusa-cluster"
+}
+
+variable "ecs_service_name" {
+  description = "ECS Service Name"
+  type        = string
+  default     = "medusa-service"
+}
+
+variable "image_uri" {
+  description = "The URI of the Docker image to deploy"
+  type        = string
+}
+
+variable "subnets" {
+  description = "List of subnets"
+  type        = list(string)
+}
+
+# VPC Configuration
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
 }
 
-# Subnets
+# Subnets Configuration
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.main.id
@@ -23,7 +52,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 }
 
-# Route Table
+# Route Table Configuration
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -100,34 +129,22 @@ resource "aws_ecs_task_definition" "medusa_task" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_execution_role.arn
 
-  container_definitions = jsonencode([
-    {
+  container_definitions = jsonencode([{
       name      = "postgres-container"
       image     = "postgres:13-alpine"
       essential = true
       memory    = 512
       cpu       = 256
       environment = [
-        {
-          name  = "POSTGRES_USER"
-          value = "medusa_user"
-        },
-        {
-          name  = "POSTGRES_PASSWORD"
-          value = "medusa_password"
-        },
-        {
-          name  = "POSTGRES_DB"
-          value = "medusa_db"
-        }
+        { name  = "POSTGRES_USER", value = "medusa_user" },
+        { name  = "POSTGRES_PASSWORD", value = "medusa_password" },
+        { name  = "POSTGRES_DB", value = "medusa_db" }
       ]
-      portMappings = [
-        {
-          containerPort = 5432
-          hostPort      = 5432
-          protocol      = "tcp"
-        }
-      ]
+      portMappings = [{
+        containerPort = 5432
+        hostPort      = 5432
+        protocol      = "tcp"
+      }]
     },
     {
       name      = "medusa-container"
@@ -136,28 +153,18 @@ resource "aws_ecs_task_definition" "medusa_task" {
       memory    = 1536
       cpu       = 768
       environment = [
-        {
-          name  = "DATABASE_URL"
-          value = "postgres://medusa_user:medusa_password@localhost:5432/medusa_db"
-        },
-        {
-          name  = "NODE_ENV"
-          value = "production"
-        }
+        { name  = "DATABASE_URL", value = "postgres://medusa_user:medusa_password@localhost:5432/medusa_db" },
+        { name  = "NODE_ENV", value = "production" }
       ]
-      portMappings = [
-        {
-          containerPort = 9000
-          hostPort      = 9000
-          protocol      = "tcp"
-        }
-      ]
-      dependsOn = [
-        {
-          containerName = "postgres-container"
-          condition     = "START"
-        }
-      ]
+      portMappings = [{
+        containerPort = 9000
+        hostPort      = 9000
+        protocol      = "tcp"
+      }]
+      dependsOn = [{
+        containerName = "postgres-container"
+        condition     = "START"
+      }]
     }
   ])
 }
@@ -183,3 +190,95 @@ resource "aws_ecs_service" "medusa_service" {
 
 # Data source for Availability Zones
 data "aws_availability_zones" "available" {}
+
+# Autoscaling Target
+resource "aws_appautoscaling_target" "ecs" {
+  max_capacity       = 3
+  min_capacity       = 1
+  resource_id        = "service/${aws_ecs_cluster.medusa_cluster.name}/${aws_ecs_service.medusa_service.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+# Autoscaling Policy (Scale Up)
+resource "aws_appautoscaling_policy" "cpu_scale_up" {
+  name               = "cpu-scale-up"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type = "ChangeInCapacity"
+    cooldown        = 60
+
+    step_adjustment {
+      scaling_adjustment          = 1
+      metric_interval_lower_bound = 0
+    }
+  }
+}
+
+# Autoscaling Policy (Scale Down)
+resource "aws_appautoscaling_policy" "cpu_scale_down" {
+  name               = "cpu-scale-down"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type = "ChangeInCapacity"
+    cooldown        = 300
+
+    step_adjustment {
+      scaling_adjustment           = -1
+      metric_interval_upper_bound  = 0
+    }
+  }
+}
+
+# High CPU Utilization Alarm (Scale Up)
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name                = "MedusaCPUHigh"
+  comparison_operator       = "GreaterThanThreshold"
+  evaluation_periods        = 2
+  metric_name               = "CPUUtilization"
+  namespace                 = "AWS/ECS"
+  period                    = 60
+  statistic                 = "Average"
+  threshold                 = 70
+  alarm_description         = "Alarm when CPU exceeds 70%"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.medusa_cluster.name
+    ServiceName = aws_ecs_service.medusa_service.name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.cpu_scale_up.arn]
+}
+
+# Low CPU Utilization Alarm (Scale Down)
+resource "aws_cloudwatch_metric_alarm" "cpu_low" {
+  alarm_name                = "MedusaCPULow"
+  comparison_operator       = "LessThanThreshold"
+  evaluation_periods        = 2
+  metric_name               = "CPUUtilization"
+  namespace                 = "AWS/ECS"
+  period                    = 60
+  statistic                 = "Average"
+  threshold                 = 30
+  alarm_description         = "Alarm when CPU falls below 30%"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.medusa_cluster.name
+    ServiceName = aws_ecs_service.medusa_service.name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.cpu_scale_down.arn]
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.medusa_service.name
+}
+
