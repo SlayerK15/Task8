@@ -1,80 +1,3 @@
-provider "aws" {
-  region = "us-east-1"
-}
-
-# ECS Cluster
-resource "aws_ecs_cluster" "medusa_cluster" {
-  name = "medusa-cluster"
-}
-
-# ECS Task Definition (assuming you already have this in place)
-resource "aws_ecs_task_definition" "medusa_task" {
-  family                   = "medusa-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  container_definitions    = jsonencode([
-    {
-      name      = "medusa-app"
-      image     = "202533508516.dkr.ecr.us-east-1.amazonaws.com/medusa-app"
-      cpu       = 256
-      memory    = 512
-      essential = true
-      portMappings = [{
-        containerPort = 9000
-        hostPort      = 9000
-      }]
-    }
-  ])
-  cpu                     = "256"
-  memory                  = "512"
-  requires_compatibilities = ["FARGATE"]
-  network_mode            = "awsvpc"
-}
-
-# ECS Service
-resource "aws_ecs_service" "medusa_service" {
-  name            = "medusa-service"
-  cluster         = aws_ecs_cluster.medusa_cluster.id
-  task_definition = aws_ecs_task_definition.medusa_task.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = var.subnets
-    security_groups  = [aws_security_group.allow_all.id]
-    assign_public_ip = true
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.lb_target_group.arn
-    container_name   = "medusa-app"
-    container_port   = 9000
-  }
-}
-
-# IAM Role for ECS Autoscaling
-resource "aws_iam_role" "ecs_autoscaling_role" {
-  name = "ecsAutoscalingRole"
-
-  assume_role_policy = jsonencode({
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Action": "sts:AssumeRole",
-      "Principal": {
-        "Service": "application-autoscaling.amazonaws.com"
-      },
-      "Effect": "Allow",
-      "Sid": ""
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_autoscaling_policy" {
-  role       = aws_iam_role.ecs_autoscaling_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole"
-}
-
 # Autoscaling Target
 resource "aws_appautoscaling_target" "ecs" {
   max_capacity       = 3
@@ -120,4 +43,44 @@ resource "aws_appautoscaling_policy" "cpu_scale_down" {
       metric_interval_upper_bound  = 0
     }
   }
+}
+
+# High CPU Utilization Alarm (Scale Up)
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name                = "MedusaCPUHigh"
+  comparison_operator       = "GreaterThanThreshold"
+  evaluation_periods        = 2
+  metric_name               = "CPUUtilization"
+  namespace                 = "AWS/ECS"
+  period                    = 60
+  statistic                 = "Average"
+  threshold                 = 70
+  alarm_description         = "Alarm when CPU exceeds 70%"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.medusa_cluster.name
+    ServiceName = aws_ecs_service.medusa_service.name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.cpu_scale_up.arn]
+}
+
+# Low CPU Utilization Alarm (Scale Down)
+resource "aws_cloudwatch_metric_alarm" "cpu_low" {
+  alarm_name                = "MedusaCPULow"
+  comparison_operator       = "LessThanThreshold"
+  evaluation_periods        = 2
+  metric_name               = "CPUUtilization"
+  namespace                 = "AWS/ECS"
+  period                    = 60
+  statistic                 = "Average"
+  threshold                 = 30
+  alarm_description         = "Alarm when CPU falls below 30%"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.medusa_cluster.name
+    ServiceName = aws_ecs_service.medusa_service.name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.cpu_scale_down.arn]
 }
