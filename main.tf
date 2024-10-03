@@ -1,13 +1,110 @@
 # Provider Configuration
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
+}
+
+# Variables Definition
+# AWS Region
+variable "aws_region" {
+  description = "The AWS region to deploy resources in."
+  default     = "us-east-1"
+}
+
+# VPC CIDR Block
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC."
+  default     = "10.0.0.0/16"
+}
+
+# Availability Zone Count
+variable "az_count" {
+  description = "Number of availability zones to use."
+  default     = 2
+}
+
+# ECS Cluster Name
+variable "ecs_cluster_name" {
+  description = "Name of the ECS cluster."
+  default     = "medusa-cluster"
+}
+
+# ECR Repository Name
+variable "ecr_repository_name" {
+  description = "Name of the ECR repository."
+  default     = "medusa-app-repo"
+}
+
+# ECS Service Name
+variable "ecs_service_name" {
+  description = "Name of the ECS service."
+  default     = "medusa-service"
+}
+
+# ECS Task Definition Family
+variable "ecs_task_family" {
+  description = "Family name of the ECS task definition."
+  default     = "medusa-task"
+}
+
+# Container Port
+variable "container_port" {
+  description = "Port on which the container listens."
+  default     = 9000
+}
+
+# Postgres Container Port
+variable "postgres_container_port" {
+  description = "Port on which the Postgres container listens."
+  default     = 5432
+}
+
+# Fargate CPU and Memory
+variable "fargate_cpu" {
+  description = "CPU units for Fargate tasks."
+  default     = "1024"
+}
+
+variable "fargate_memory" {
+  description = "Memory in MiB for Fargate tasks."
+  default     = "2048"
+}
+
+# Desired Count for ECS Service
+variable "desired_count" {
+  description = "Desired number of ECS service instances."
+  default     = 1
+}
+
+# Autoscaling Configuration
+variable "min_capacity" {
+  description = "Minimum number of ECS tasks."
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of ECS tasks."
+  default     = 3
+}
+
+variable "cpu_scale_up_threshold" {
+  description = "CPU utilization percentage to scale up."
+  default     = 70
+}
+
+variable "cpu_scale_down_threshold" {
+  description = "CPU utilization percentage to scale down."
+  default     = 30
 }
 
 # VPC Configuration
 resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Data source for Availability Zones
@@ -15,16 +112,24 @@ data "aws_availability_zones" "available" {}
 
 # Subnets Configuration
 resource "aws_subnet" "public" {
-  count                   = 2
+  count                   = var.az_count
   vpc_id                  = aws_vpc.main.id
   cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Route Table Configuration
@@ -35,13 +140,21 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.igw.id
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Route Table Associations
 resource "aws_route_table_association" "public" {
-  count          = 2
+  count          = var.az_count
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Security Group for ECS Service
@@ -51,8 +164,8 @@ resource "aws_security_group" "ecs_service" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port   = 9000
-    to_port     = 9000
+    from_port   = var.container_port
+    to_port     = var.container_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -63,21 +176,24 @@ resource "aws_security_group" "ecs_service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ECS Cluster
 resource "aws_ecs_cluster" "medusa_cluster" {
-  name = "medusa-cluster"  
+  name = var.ecs_cluster_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-# ECR Repository for the Docker Image
-resource "aws_ecr_repository" "medusa_app_repo" {
-  name                 = "medusa-app-repo"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+# ECR Repository Data Source (use existing ECR repository)
+data "aws_ecr_repository" "medusa_app_repo" {
+  name = var.ecr_repository_name
 }
 
 # IAM Role for ECS Task Execution
@@ -94,21 +210,29 @@ resource "aws_iam_role" "ecs_task_execution_role" {
       Action = "sts:AssumeRole"
     }]
   })
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Attach the AWS managed policy for ECS Task Execution
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ECS Task Definition
 resource "aws_ecs_task_definition" "medusa_task" {
-  family                   = "medusa-task"
+  family                   = var.ecs_task_family
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "1024"
-  memory                   = "2048"
+  cpu                      = var.fargate_cpu
+  memory                   = var.fargate_memory
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_execution_role.arn
 
@@ -125,22 +249,22 @@ resource "aws_ecs_task_definition" "medusa_task" {
         { name = "POSTGRES_DB", value = "medusa_db" }
       ]
       portMappings = [{
-        containerPort = 5432
+        containerPort = var.postgres_container_port
         protocol      = "tcp"
       }]
     },
     {
       name      = "medusa-container"
-      image     = "${aws_ecr_repository.medusa_app_repo.repository_url}:latest"  # Using ECR image URI
+      image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest"
       essential = true
       memory    = 1536
       cpu       = 768
       environment = [
-        { name = "DATABASE_URL", value = "postgres://medusa_user:medusa_password@postgres-container:5432/medusa_db" },
+        { name = "DATABASE_URL", value = "postgres://medusa_user:medusa_password@postgres-container:${var.postgres_container_port}/medusa_db" },
         { name = "NODE_ENV", value = "production" }
       ]
       portMappings = [{
-        containerPort = 9000
+        containerPort = var.container_port
         protocol      = "tcp"
       }]
       dependsOn = [{
@@ -149,14 +273,18 @@ resource "aws_ecs_task_definition" "medusa_task" {
       }]
     }
   ])
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ECS Service using Fargate Spot
 resource "aws_ecs_service" "medusa_service" {
-  name            = "medusa-service"
+  name            = var.ecs_service_name
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
-  desired_count   = 1
+  desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -169,15 +297,23 @@ resource "aws_ecs_service" "medusa_service" {
     capacity_provider = "FARGATE_SPOT"
     weight            = 1
   }
+
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 # Autoscaling Target
 resource "aws_appautoscaling_target" "ecs" {
-  max_capacity       = 3
-  min_capacity       = 1
+  max_capacity       = var.max_capacity
+  min_capacity       = var.min_capacity
   resource_id        = "service/${aws_ecs_cluster.medusa_cluster.name}/${aws_ecs_service.medusa_service.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Autoscaling Policy (Scale Up)
@@ -196,6 +332,10 @@ resource "aws_appautoscaling_policy" "cpu_scale_up" {
       scaling_adjustment          = 1
       metric_interval_lower_bound = 0
     }
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
@@ -216,6 +356,10 @@ resource "aws_appautoscaling_policy" "cpu_scale_down" {
       metric_interval_upper_bound  = 0
     }
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # High CPU Utilization Alarm (Scale Up)
@@ -227,8 +371,8 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   namespace           = "AWS/ECS"
   period              = 60
   statistic           = "Average"
-  threshold           = 70
-  alarm_description   = "Alarm when CPU exceeds 70%"
+  threshold           = var.cpu_scale_up_threshold
+  alarm_description   = "Alarm when CPU exceeds ${var.cpu_scale_up_threshold}%"
 
   dimensions = {
     ClusterName = aws_ecs_cluster.medusa_cluster.name
@@ -236,6 +380,10 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   }
 
   alarm_actions = [aws_appautoscaling_policy.cpu_scale_up.arn]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Low CPU Utilization Alarm (Scale Down)
@@ -247,8 +395,8 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   namespace           = "AWS/ECS"
   period              = 60
   statistic           = "Average"
-  threshold           = 30
-  alarm_description   = "Alarm when CPU falls below 30%"
+  threshold           = var.cpu_scale_down_threshold
+  alarm_description   = "Alarm when CPU falls below ${var.cpu_scale_down_threshold}%"
 
   dimensions = {
     ClusterName = aws_ecs_cluster.medusa_cluster.name
@@ -256,6 +404,10 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   }
 
   alarm_actions = [aws_appautoscaling_policy.cpu_scale_down.arn]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Output (optional)
