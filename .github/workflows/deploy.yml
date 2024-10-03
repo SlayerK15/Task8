@@ -11,28 +11,30 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
     - name: Login to Amazon ECR
-      run: |
-        aws ecr get-login-password --region us-east-1 | \
-        docker login --username AWS --password-stdin <your_account_id>.dkr.ecr.us-east-1.amazonaws.com
+      uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build the Docker image
       run: docker build -t medusa-app .
 
     - name: Tag the Docker image for ECR
-      run: docker tag medusa-app:latest <your_account_id>.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
+      env:
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      run: docker tag medusa-app:latest $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
 
     - name: Push the image to ECR
-      run: docker push <your_account_id>.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
+      env:
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      run: docker push $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
 
     - name: Terraform Init
       run: terraform init
