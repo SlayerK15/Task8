@@ -67,8 +67,7 @@ resource "aws_security_group" "ecs_service" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "medusa_cluster" {
-  name = "medusa-cluster"  # Replace with your ECS cluster name if different
-}
+  name = "medusa-cluster"  
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
@@ -124,7 +123,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
     },
     {
       name      = "medusa-container"
-      image     = "your-image-uri"  # Replace with your Docker image URI
+      image     = "841162667281.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest"  
       essential = true
       memory    = 1536
       cpu       = 768
