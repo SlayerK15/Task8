@@ -36,5 +36,12 @@ jobs:
     - name: Push the image to ECR
       run: docker push 841162667281.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
 
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Terraform plan
+      run: terraform plan
+
+
     - name: Deploy to ECS with Terraform
       run: terraform apply -auto-approve
