@@ -70,14 +70,7 @@ resource "aws_ecs_cluster" "medusa_cluster" {
   name = "medusa-cluster"  
 }
 
-# ECR Repository for the Docker Image
-resource "aws_ecr_repository" "medusa_app_repo" {
-  name                 = "medusa-app-repo"
-  image_tag_mutability = "MUTABLE"
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
+
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
