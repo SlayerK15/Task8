@@ -21,27 +21,13 @@ jobs:
         aws-region: us-east-1
 
     - name: Login to Amazon ECR
-      run: |
-        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 841162667281.dkr.ecr.us-east-1.amazonaws.com
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
       env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-    - name: Build the Docker image
-      run: docker build -t medusa-app .
-
-    - name: Tag the Docker image for ECR
-      run: docker tag medusa-app:latest 841162667281.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
-
-    - name: Push the image to ECR
-      run: docker push 841162667281.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest
-
-    - name: Terraform Init
-      run: terraform init
-
-    - name: Terraform plan
-      run: terraform plan
-
-
-    - name: Deploy to ECS with Terraform
-      run: terraform apply -auto-approve
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: medusa-app-repo
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $EC
