@@ -3,62 +3,55 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Data Sources
+data "aws_caller_identity" "current" {}
+
 # Variables Definition
-# AWS Region
 variable "aws_region" {
   description = "The AWS region to deploy resources in."
   default     = "us-east-1"
 }
 
-# VPC CIDR Block
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   default     = "10.0.0.0/16"
 }
 
-# Availability Zone Count
 variable "az_count" {
   description = "Number of availability zones to use."
   default     = 2
 }
 
-# ECS Cluster Name
 variable "ecs_cluster_name" {
   description = "Name of the ECS cluster."
   default     = "medusa-cluster"
 }
 
-# ECR Repository Name
 variable "ecr_repository_name" {
   description = "Name of the ECR repository."
   default     = "medusa-app-repo"
 }
 
-# ECS Service Name
 variable "ecs_service_name" {
   description = "Name of the ECS service."
   default     = "medusa-service"
 }
 
-# ECS Task Definition Family
 variable "ecs_task_family" {
   description = "Family name of the ECS task definition."
   default     = "medusa-task"
 }
 
-# Container Port
 variable "container_port" {
   description = "Port on which the container listens."
   default     = 9000
 }
 
-# Postgres Container Port
 variable "postgres_container_port" {
   description = "Port on which the Postgres container listens."
   default     = 5432
 }
 
-# Fargate CPU and Memory
 variable "fargate_cpu" {
   description = "CPU units for Fargate tasks."
   default     = "1024"
@@ -69,13 +62,11 @@ variable "fargate_memory" {
   default     = "2048"
 }
 
-# Desired Count for ECS Service
 variable "desired_count" {
   description = "Desired number of ECS service instances."
   default     = 1
 }
 
-# Autoscaling Configuration
 variable "min_capacity" {
   description = "Minimum number of ECS tasks."
   default     = 1
@@ -216,10 +207,50 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   }
 }
 
-# Attach the AWS managed policy for ECS Task Execution
+# Attach AWS Managed Policy for ECS Task Execution
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# IAM Policy for CloudWatch Logs
+resource "aws_iam_policy" "ecs_task_execution_policy" {
+  name        = "ecsTaskExecutionPolicy"
+  description = "Policy to allow ECS tasks to write logs to CloudWatch"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.ecs_task_family}:*"
+      }
+    ]
+  })
+}
+
+# Attach the Policy to the ECS Task Execution Role
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_custom_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = aws_iam_policy.ecs_task_execution_policy.arn
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# CloudWatch Log Group for ECS Tasks
+resource "aws_cloudwatch_log_group" "ecs_log_group" {
+  name              = "/ecs/${var.ecs_task_family}"
+  retention_in_days = 30
 
   lifecycle {
     prevent_destroy = true
@@ -252,6 +283,14 @@ resource "aws_ecs_task_definition" "medusa_task" {
         containerPort = var.postgres_container_port
         protocol      = "tcp"
       }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "postgres"
+        }
+      }
     },
     {
       name      = "medusa-container"
@@ -271,6 +310,14 @@ resource "aws_ecs_task_definition" "medusa_task" {
         containerName = "postgres-container"
         condition     = "START"
       }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "medusa"
+        }
+      }
     }
   ])
 
@@ -285,7 +332,7 @@ resource "aws_ecs_service" "medusa_service" {
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
   desired_count   = var.desired_count
-  # launch_type     = "FARGATE"  # Removed as per AWS requirements
+  # Removed launch_type as per AWS requirements
 
   network_configuration {
     subnets         = aws_subnet.public[*].id
