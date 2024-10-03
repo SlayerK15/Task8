@@ -68,6 +68,7 @@ resource "aws_security_group" "ecs_service" {
 # ECS Cluster
 resource "aws_ecs_cluster" "medusa_cluster" {
   name = "medusa-cluster"  
+}
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
