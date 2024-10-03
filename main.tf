@@ -285,7 +285,7 @@ resource "aws_ecs_service" "medusa_service" {
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  # launch_type     = "FARGATE"  # Removed as per AWS requirements
 
   network_configuration {
     subnets         = aws_subnet.public[*].id
