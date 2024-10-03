@@ -1,6 +1,6 @@
 # Provider Configuration
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"  # Replace with your desired AWS region
 }
 
 # VPC Configuration
@@ -9,6 +9,9 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 }
+
+# Data source for Availability Zones
+data "aws_availability_zones" "available" {}
 
 # Subnets Configuration
 resource "aws_subnet" "public" {
@@ -64,7 +67,7 @@ resource "aws_security_group" "ecs_service" {
 
 # ECS Cluster
 resource "aws_ecs_cluster" "medusa_cluster" {
-  name = var.ecs_cluster_name
+  name = "medusa-cluster"  # Replace with your ECS cluster name if different
 }
 
 # IAM Role for ECS Task Execution
@@ -101,7 +104,8 @@ resource "aws_ecs_task_definition" "medusa_task" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_execution_role.arn
 
-  container_definitions = jsonencode([{
+  container_definitions = jsonencode([
+    {
       name      = "postgres-container"
       image     = "postgres:13-alpine"
       essential = true
@@ -120,7 +124,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
     },
     {
       name      = "medusa-container"
-      image     = var.image_uri
+      image     = "your-image-uri"  # Replace with your Docker image URI
       essential = true
       memory    = 1536
       cpu       = 768
@@ -143,7 +147,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
 
 # ECS Service using Fargate Spot
 resource "aws_ecs_service" "medusa_service" {
-  name            = var.ecs_service_name
+  name            = "medusa-service"  # Replace with your ECS service name if different
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
   desired_count   = 1
@@ -159,9 +163,6 @@ resource "aws_ecs_service" "medusa_service" {
     weight            = 1
   }
 }
-
-# Data source for Availability Zones
-data "aws_availability_zones" "available" {}
 
 # Autoscaling Target
 resource "aws_appautoscaling_target" "ecs" {
@@ -197,7 +198,7 @@ resource "aws_appautoscaling_policy" "cpu_scale_down" {
   policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.ecs.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+  service_namespace  = "ecs"
 
   step_scaling_policy_configuration {
     adjustment_type = "ChangeInCapacity"
@@ -250,7 +251,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   alarm_actions = [aws_appautoscaling_policy.cpu_scale_down.arn]
 }
 
+# Output (optional)
 output "ecs_service_name" {
   value = aws_ecs_service.medusa_service.name
 }
-
