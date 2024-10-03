@@ -1,6 +1,6 @@
 # Provider Configuration
 provider "aws" {
-  region = "us-east-1"  # Replace with your desired AWS region
+  region = "us-east-1"
 }
 
 # VPC Configuration
@@ -70,6 +70,15 @@ resource "aws_ecs_cluster" "medusa_cluster" {
   name = "medusa-cluster"  
 }
 
+# ECR Repository for the Docker Image
+resource "aws_ecr_repository" "medusa_app_repo" {
+  name                 = "medusa-app-repo"
+  image_tag_mutability = "MUTABLE"
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
@@ -104,8 +113,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_execution_role.arn
 
-  container_definitions = jsonencode([
-    {
+  container_definitions = jsonencode([{
       name      = "postgres-container"
       image     = "postgres:13-alpine"
       essential = true
@@ -124,7 +132,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
     },
     {
       name      = "medusa-container"
-      image     = "841162667281.dkr.ecr.us-east-1.amazonaws.com/medusa-app-repo:latest"  
+      image     = "${aws_ecr_repository.medusa_app_repo.repository_url}:latest"  # Using ECR image URI
       essential = true
       memory    = 1536
       cpu       = 768
@@ -147,7 +155,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
 
 # ECS Service using Fargate Spot
 resource "aws_ecs_service" "medusa_service" {
-  name            = "medusa-service"  # Replace with your ECS service name if different
+  name            = "medusa-service"
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
   desired_count   = 1
