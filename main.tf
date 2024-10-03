@@ -240,7 +240,6 @@ resource "aws_ecs_task_definition" "medusa_task" {
   container_definitions = jsonencode([
     {
       name      = "postgres"
-      hostname  = "postgres"
       image     = "postgres:13-alpine"
       essential = true
       memory    = 512
@@ -272,7 +271,6 @@ resource "aws_ecs_task_definition" "medusa_task" {
     },
     {
       name      = "medusa"
-      hostname  = "medusa"
       image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest"
       essential = true
       memory    = 1536
