@@ -239,52 +239,65 @@ resource "aws_ecs_task_definition" "medusa_task" {
 
   container_definitions = jsonencode([
     {
-      name      = "postgres-container",
-      image     = "postgres:13-alpine",
-      essential = true,
-      memory    = 512,
-      cpu       = 256,
+      name      = "postgres"
+      hostname  = "postgres"
+      image     = "postgres:13-alpine"
+      essential = true
+      memory    = 512
+      cpu       = 256
       environment = [
         { name = "POSTGRES_USER", value = "postgres" },
         { name = "POSTGRES_PASSWORD", value = "postgres" },
         { name = "POSTGRES_DB", value = "medusa_db" }
-      ],
+      ]
       portMappings = [{
-        containerPort = var.postgres_container_port,
+        containerPort = var.postgres_container_port
         protocol      = "tcp"
-      }],
+      }]
+      healthCheck = {
+        command     = ["CMD-SHELL", "pg_isready -U postgres"]
+        interval    = 10
+        timeout     = 5
+        retries     = 5
+        startPeriod = 30
+      }
       logConfiguration = {
-        logDriver = "awslogs",
+        logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name,
-          awslogs-region        = var.aws_region,
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "postgres"
         }
       }
     },
     {
-      name      = "medusa-container",
-      image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest",
-      essential = true,
-      memory    = 1536,
-      cpu       = 768,
+      name      = "medusa"
+      hostname  = "medusa"
+      image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest"
+      essential = true
+      memory    = 1536
+      cpu       = 768
       environment = [
-        { name = "DATABASE_URL", value = "postgres://postgres:postgres@postgres-container:${var.postgres_container_port}/medusa_db" },
-        { name = "NODE_ENV", value = "production" }
-      ],
+        { name = "DATABASE_URL", value = "postgres://postgres:postgres@postgres:${var.postgres_container_port}/medusa_db" },
+        { name = "NODE_ENV", value = "production" },
+        { name = "MEDUSA_BACKEND_URL", value = "http://localhost:${var.container_port}" },
+        { name = "JWT_SECRET", value = "your_jwt_secret" },
+        { name = "COOKIE_SECRET", value = "your_cookie_secret" }
+        # Add other required environment variables
+      ]
       portMappings = [{
-        containerPort = var.container_port,
+        containerPort = var.container_port
         protocol      = "tcp"
-      }],
+      }]
       dependsOn = [{
-        containerName = "postgres-container",
-        condition     = "START"
-      }],
+        containerName = "postgres"
+        condition     = "HEALTHY"
+      }]
       logConfiguration = {
-        logDriver = "awslogs",
+        logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name,
-          awslogs-region        = var.aws_region,
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "medusa"
         }
       }
