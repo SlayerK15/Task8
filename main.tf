@@ -43,12 +43,12 @@ variable "ecs_task_family" {
 }
 
 variable "container_port" {
-  description = "Port on which the container listens."
+  description = "Port on which the Medusa container listens."
   default     = 9000
 }
 
 variable "postgres_container_port" {
-  description = "Port on which the Postgres container listens."
+  description = "Port on which the PostgreSQL container listens."
   default     = 5432
 }
 
@@ -192,12 +192,12 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [{
-      Effect = "Allow"
+      Effect = "Allow",
       Principal = {
         Service = "ecs-tasks.amazonaws.com"
-      }
+      },
       Action = "sts:AssumeRole"
     }]
   })
@@ -223,14 +223,14 @@ resource "aws_iam_policy" "ecs_task_execution_policy" {
   description = "Policy to allow ECS tasks to write logs to CloudWatch"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = [
+        Effect = "Allow",
+        Action = [
           "logs:CreateLogStream",
           "logs:PutLogEvents"
-        ]
+        ],
         Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.ecs_task_family}:*"
       }
     ]
@@ -269,52 +269,52 @@ resource "aws_ecs_task_definition" "medusa_task" {
 
   container_definitions = jsonencode([
     {
-      name      = "postgres-container"
-      image     = "postgres:13-alpine"
-      essential = true
-      memory    = 512
-      cpu       = 256
+      name      = "postgres-container",
+      image     = "postgres:13-alpine",
+      essential = true,
+      memory    = 512,
+      cpu       = 256,
       environment = [
-        { name = "POSTGRES_USER", value = "medusa_user" },
-        { name = "POSTGRES_PASSWORD", value = "medusa_password" },
+        { name = "POSTGRES_USER", value = "postgres" },
+        { name = "POSTGRES_PASSWORD", value = "postgres" },
         { name = "POSTGRES_DB", value = "medusa_db" }
-      ]
+      ],
       portMappings = [{
-        containerPort = var.postgres_container_port
+        containerPort = var.postgres_container_port,
         protocol      = "tcp"
-      }]
+      }],
       logConfiguration = {
-        logDriver = "awslogs"
+        logDriver = "awslogs",
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
-          awslogs-region        = var.aws_region
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name,
+          awslogs-region        = var.aws_region,
           awslogs-stream-prefix = "postgres"
         }
       }
     },
     {
-      name      = "medusa-container"
-      image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest"
-      essential = true
-      memory    = 1536
-      cpu       = 768
+      name      = "medusa-container",
+      image     = "${data.aws_ecr_repository.medusa_app_repo.repository_url}:latest",
+      essential = true,
+      memory    = 1536,
+      cpu       = 768,
       environment = [
-        { name = "DATABASE_URL", value = "postgres://medusa_user:medusa_password@postgres-container:${var.postgres_container_port}/medusa_db" },
+        { name = "DATABASE_URL", value = "postgres://postgres:postgres@postgres-container:${var.postgres_container_port}/medusa_db" },
         { name = "NODE_ENV", value = "production" }
-      ]
+      ],
       portMappings = [{
-        containerPort = var.container_port
+        containerPort = var.container_port,
         protocol      = "tcp"
-      }]
+      }],
       dependsOn = [{
-        containerName = "postgres-container"
+        containerName = "postgres-container",
         condition     = "START"
-      }]
+      }],
       logConfiguration = {
-        logDriver = "awslogs"
+        logDriver = "awslogs",
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
-          awslogs-region        = var.aws_region
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name,
+          awslogs-region        = var.aws_region,
           awslogs-stream-prefix = "medusa"
         }
       }
@@ -332,7 +332,6 @@ resource "aws_ecs_service" "medusa_service" {
   cluster         = aws_ecs_cluster.medusa_cluster.id
   task_definition = aws_ecs_task_definition.medusa_task.arn
   desired_count   = var.desired_count
-  # Removed launch_type as per AWS requirements
 
   network_configuration {
     subnets         = aws_subnet.public[*].id
